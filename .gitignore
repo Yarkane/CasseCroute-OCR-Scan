@@ -1,3 +1,5 @@
 input/
 output/
 autoocr
+.vscode/
+__debug_bin.*
