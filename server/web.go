@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -120,6 +121,51 @@ func (s *Server) streamHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// existsHandler returns JSON {"exists": true|false} depending on whether the
+// given file exists in the output directory. Used by the client to detect when
+// the debug file has been removed by the processor.
+func (s *Server) existsHandler(w http.ResponseWriter, r *http.Request) {
+	file := r.URL.Query().Get("file")
+	if file == "" {
+		http.Error(w, "missing file parameter", http.StatusBadRequest)
+		return
+	}
+	file = filepath.Base(file)
+	// the client passes the debug filename (e.g. 163000_name.pdf.debug.txt)
+	// the processor now writes a marker <basename>.success where basename is
+	// the original output filename (i.e. debug with ".debug.txt" removed).
+	// derive the success filename and check for its existence.
+	successName := file
+	if len(successName) > 10 && successName[len(successName)-10:] == ".debug.txt" {
+		successName = successName[:len(successName)-10]
+	}
+	successName = successName + ".success"
+	path := filepath.Join(s.OutputDir, successName)
+	_, err := os.Stat(path)
+	exists := err == nil
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]bool{"exists": exists})
+}
+
+// downloadHandler serves a produced output file from the output directory as
+// an attachment. The client will call this when processing is finished.
+func (s *Server) downloadHandler(w http.ResponseWriter, r *http.Request) {
+	file := r.URL.Query().Get("file")
+	if file == "" {
+		http.Error(w, "missing file parameter", http.StatusBadRequest)
+		return
+	}
+	file = filepath.Base(file)
+	path := filepath.Join(s.OutputDir, file)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Disposition", "attachment; filename=\""+file+"\"")
+	http.ServeFile(w, r, path)
+}
+
 func splitLines(s string) []string {
 	// simple split preserving empty final line
 	var out []string
@@ -211,6 +257,8 @@ func (s *Server) Start(wg *sync.WaitGroup) error {
 	mux.Handle("/resources/", s.resourceHandler())
 	mux.HandleFunc("/upload", s.uploadHandler)
 	mux.HandleFunc("/stream", s.streamHandler)
+	mux.HandleFunc("/exists", s.existsHandler)
+	mux.HandleFunc("/download", s.downloadHandler)
 
 	s.srv = &http.Server{
 		Addr:    s.Addr,
