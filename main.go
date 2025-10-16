@@ -7,8 +7,10 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/xperimental/autoocr/processor"
+	"github.com/xperimental/autoocr/server"
 	"github.com/xperimental/autoocr/watcher"
 )
 
@@ -33,6 +35,12 @@ func main() {
 	}
 	watcher.Start(wg)
 
+	// Start minimal web server to accept uploads
+	webSrv := server.New(":8080", config.InputDir, config.OutputDir, logger)
+	if err := webSrv.Start(wg); err != nil {
+		logger.Fatalf("Error starting web server: %s", err)
+	}
+
 	processor, err := processor.New(ctx, logger, config.ProcessorConfig())
 	if err != nil {
 		logger.Fatalf("Error creating processor: %s", err)
@@ -56,6 +64,15 @@ func main() {
 			case <-watcher.Trigger:
 				processor.Trigger()
 			}
+		}
+	}()
+
+	// Wait for cancellation and then gracefully shutdown web server
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := webSrv.Shutdown(shutdownCtx); err != nil {
+			logger.Errorf("Error shutting down web server: %v", err)
 		}
 	}()
 

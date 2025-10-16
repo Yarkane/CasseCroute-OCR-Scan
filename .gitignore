@@ -3,3 +3,4 @@ output/
 autoocr
 .vscode/
 __debug_bin.*
+autoocr.exe

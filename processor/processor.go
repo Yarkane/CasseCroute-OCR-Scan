@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,7 +67,7 @@ func (p *Processor) Trigger() {
 }
 
 func (p *Processor) run() error {
-	infos, err := ioutil.ReadDir(p.cfg.InputDir)
+	infos, err := os.ReadDir(p.cfg.InputDir)
 	if err != nil {
 		return fmt.Errorf("error reading directory: %s", err)
 	}
