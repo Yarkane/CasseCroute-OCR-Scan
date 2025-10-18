@@ -26,6 +26,7 @@ func main() {
 	logger.Debugf("Input: %s", config.InputDir)
 	logger.Debugf("Output: %s", config.OutputDir)
 	logger.Debugf("Permissions: %s", os.FileMode(config.OutPermissions))
+	logger.Debugf("Web Server Port: %s", config.WebServerPort)
 
 	wg := &sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -37,7 +38,7 @@ func main() {
 	watcher.Start(wg)
 
 	// Start minimal web server to accept uploads
-	webSrv := server.New(":8080", config.InputDir, config.OutputDir, logger)
+	webSrv := server.New(":"+config.WebServerPort, config.InputDir, config.OutputDir, logger)
 	if err := webSrv.Start(wg); err != nil {
 		logger.Fatalf("Error starting web server: %s", err)
 	}
