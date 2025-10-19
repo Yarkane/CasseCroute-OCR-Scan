@@ -54,6 +54,17 @@ func (s *Server) resourceHandler() http.Handler {
 	return http.StripPrefix("/resources/", fs)
 }
 
+// resourceIconHandler serves the specific application icon.
+func (s *Server) resourceIconHandler(w http.ResponseWriter, r *http.Request) {
+	iconPath := filepath.Join("server", "resources", "cassecroutefinal.png")
+	if _, err := os.Stat(iconPath); os.IsNotExist(err) {
+		http.NotFound(w, r)
+		return
+	}
+	// Let http.ServeFile handle content-type and range requests
+	http.ServeFile(w, r, iconPath)
+}
+
 // streamHandler streams the contents of the debug file as server-sent events.
 func (s *Server) streamHandler(w http.ResponseWriter, r *http.Request) {
 	file := r.URL.Query().Get("file")
@@ -255,6 +266,8 @@ func (s *Server) Start(wg *sync.WaitGroup) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.uploadPageHandler)
 	mux.Handle("/resources/", s.resourceHandler())
+	// explicit icon route to ensure correct serving for clients requesting the app icon
+	mux.HandleFunc("/resources/cassecroutefinal.png", s.resourceIconHandler)
 	mux.HandleFunc("/upload", s.uploadHandler)
 	mux.HandleFunc("/stream", s.streamHandler)
 	mux.HandleFunc("/exists", s.existsHandler)
