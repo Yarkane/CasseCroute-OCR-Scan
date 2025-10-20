@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,7 +67,7 @@ func (p *Processor) Trigger() {
 }
 
 func (p *Processor) run() error {
-	infos, err := ioutil.ReadDir(p.cfg.InputDir)
+	infos, err := os.ReadDir(p.cfg.InputDir)
 	if err != nil {
 		return fmt.Errorf("error reading directory: %s", err)
 	}
@@ -100,6 +99,15 @@ func (p *Processor) processFiles(files []string) error {
 			continue
 		}
 
+		// create a .success marker file to signal completion to the web UI
+		successFile := filepath.Join(p.cfg.OutputDir, filepath.Base(file)+".success")
+		if sf, err := os.OpenFile(successFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644); err == nil {
+			sf.WriteString(fmt.Sprintf("processed: %s\n", filepath.Base(file)))
+			sf.Close()
+		} else {
+			filelog.WithError(err).Warn("Could not create success marker file")
+		}
+
 		filelog.Printf("Processing successful in %s.", time.Since(start))
 	}
 	return nil
@@ -125,7 +133,6 @@ func (p *Processor) processFile(file string) error {
 	args := []string{
 		"-o", outFile,
 		"-lang", p.cfg.Languages,
-		"-rgb",
 		file,
 	}
 

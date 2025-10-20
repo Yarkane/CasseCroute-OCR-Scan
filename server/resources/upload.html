@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Uploader - CasseCroute OCR</title>
+  <!-- App icons -->
+  <link rel="icon" type="image/png" href="/resources/cassecroutefinal.png" />
+  <link rel="apple-touch-icon" href="/resources/cassecroutefinal.png" />
+  <meta name="msapplication-TileImage" content="/resources/cassecroutefinal.png" />
+  <style>
+    :root{--bg:#2b0b3a;--card:#3a114e;--accent:#9b59ff;--txt:#f5eaff}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial;color:var(--txt);background:linear-gradient(180deg,var(--bg),#1e0726);min-height:100vh;display:flex;align-items:center;justify-content:center}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01));padding:28px;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.4);width:420px}
+    .logo{display:flex;align-items:center;gap:12px;margin-bottom:18px}
+    .logo img{width:56px;height:56px;object-fit:contain;border-radius:8px}
+    h1{font-size:18px;margin:0}
+    p{margin:6px 0 16px;color:rgba(245,234,255,0.85)}
+    form{display:flex;flex-direction:column;gap:12px}
+    input[type=file]{background:transparent;color:var(--txt)}
+    button{background:var(--accent);border:none;color:#1a0022;padding:10px 12px;border-radius:8px;font-weight:600;cursor:pointer}
+    footer{margin-top:10px;font-size:12px;color:rgba(245,234,255,0.6)}
+    .note{font-size:13px;color:rgba(255,255,255,0.8)}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <img src="{{.LogoPath}}" alt="logo"/>
+      <div>
+        <h1>CasseCroute OCR - Upload</h1>
+        <p>Déposez un fichier pour le traitement OCR.</p>
+      </div>
+    </div>
+
+    <form id="uploadForm" action="/upload" method="post" enctype="multipart/form-data">
+      <input id="fileInput" type="file" name="file" required />
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="display:flex;gap:8px;align-items:center">
+          <button id="submitBtn" type="submit">Envoyer</button>
+          <button id="backBtn" type="button" style="display:none">Retour</button>
+        </div>
+        <span class="note">Taille max : 100MB</span>
+      </div>
+    </form>
+
+    <footer>
+      <p>Tous les fichiers sont supprimés du serveur au bout de 3 heures.</p>
+    </footer>
+  </div>
+  <div style="position:fixed;right:20px;bottom:20px;width:480px;max-height:60vh;overflow:auto">
+    <div style="background:rgba(0,0,0,0.35);padding:12px;border-radius:8px;color:#fff">
+      <div style="font-weight:700;margin-bottom:8px">Avancement</div>
+      <pre id="debug" style="white-space:pre-wrap;word-break:break-word;max-height:50vh;overflow:auto;font-size:13px;background:transparent;margin:0"></pre>
+    </div>
+  </div>
+  <script>
+    function qs(name){
+      return new URLSearchParams(window.location.search).get(name);
+    }
+    const debugFile = qs('debug');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // Add styles for disabled and download states
+    const style = document.createElement('style');
+    style.textContent = `
+      button.disabled { background: #2b0530; cursor: default; color: #f0e8ff; }
+      button.download { background: #ff6fa6; color: #1a0022; }
+    `;
+    document.head.appendChild(style);
+
+    const fileInput = document.getElementById('fileInput');
+    const backBtn = document.getElementById('backBtn');
+
+    function setProcessing() {
+      // hide file chooser while processing
+      if (fileInput) fileInput.style.display = 'none';
+      submitBtn.classList.add('disabled');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Traitement...';
+    }
+
+    function setDownload(file) {
+      // hide file chooser and enable download button
+      if (fileInput) fileInput.style.display = 'none';
+      submitBtn.classList.remove('disabled');
+      submitBtn.classList.add('download');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Télécharger';
+      // change behavior to download the produced file
+      submitBtn.type = 'button';
+      submitBtn.onclick = function(){
+        window.location = '/download?file=' + encodeURIComponent(file);
+      };
+      // show a back button to return to main menu / upload another file
+      if (backBtn) {
+        backBtn.style.display = 'inline-block';
+        backBtn.onclick = function(){
+          // remove debug param and reload to return to the upload form
+          const u = new URL(window.location.href);
+          u.searchParams.delete('debug');
+          window.location = u.pathname + u.search;
+        };
+      }
+    }
+
+    if(debugFile){
+      const out = document.getElementById('debug');
+      setProcessing();
+      const es = new EventSource('/stream?file='+encodeURIComponent(debugFile));
+      es.onmessage = function(e){
+        out.textContent += e.data + '\n';
+        out.scrollTop = out.scrollHeight;
+      };
+
+      // poll /exists to detect when the processor writes the .success marker
+      const existsUrl = '/exists?file=' + encodeURIComponent(debugFile);
+      const poll = setInterval(function(){
+        fetch(existsUrl).then(function(resp){
+          if(!resp.ok) return;
+          return resp.json();
+        }).then(function(data){
+          if(!data) return;
+          // now the server returns exists=true when .success exists
+          if(data.exists === true){
+            // processing finished -> switch button to download
+            clearInterval(poll);
+            // the produced file is the original uploaded name without .debug.txt
+            // debugFile is like 163000_file.pdf.debug.txt -> remove .debug.txt
+            const outFile = debugFile.replace(/\.debug\.txt$/, '');
+            setDownload(outFile);
+          }
+        }).catch(function(){
+          // ignore transient errors
+        });
+      }, 1000);
+    }
+  </script>
+</body>
+</html>
